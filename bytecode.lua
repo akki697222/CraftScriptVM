@@ -58,12 +58,25 @@ function bytecode.parse(filename)
     local code_size = read_uint32(file)
     local code = {}
     for i = 1, code_size do
-        local opcode = file:read(1):byte()
-        local operand = 0
-        for j = 6, 0, -1 do
-            operand = (operand << 8) | file:read(1):byte()
+        local opcode_byte = file:read(1)
+        if not opcode_byte then
+            error("Unexpected end of file while reading opcode")
         end
-        code[i] = {opcode = opcode, operand = operand}
+        local opcode = string.byte(opcode_byte)
+    
+        local value = 0
+        for j = 6, 0, -1 do
+            local byte = file:read(1)
+            if not byte then
+                error("Unexpected end of file while reading operand")
+            end
+            value = (value * 256) + string.byte(byte)
+        end
+    
+        code[i] = {
+            opcode = opcode,
+            value = value
+        }
     end
     
     file:close()
@@ -98,9 +111,9 @@ function bytecode.write(filename, const_pool, code)
     write_uint32(file, #code)
     for _, instruction in ipairs(code) do
         file:write(string.char(instruction.opcode))
-        local operand = instruction.operand
+        local value = instruction.value
         for i = 6, 0, -1 do
-            file:write(string.char((operand >> (i * 8)) & 0xFF))
+            file:write(string.char((value >> (i * 8)) & 0xFF))
         end
     end
     
@@ -121,8 +134,8 @@ function bytecode.verify(const_pool, code)
     for i, instruction in ipairs(code) do
         assert(type(instruction.opcode) == "number" and instruction.opcode >= 0 and instruction.opcode <= 0xFF,
             string.format("Invalid opcode at instruction %d", i))
-        assert(type(instruction.operand) == "number",
-            string.format("Invalid operand at instruction %d", i))
+        assert(type(instruction.value) == "number",
+            string.format("Invalid value at instruction %d", i))
     end
     return true
 end
@@ -136,7 +149,7 @@ function bytecode.dump(const_pool, code)
     
     print("\nCode:")
     for i, instruction in ipairs(code) do
-        print(string.format("  %04d: 0x%02X %d", i, instruction.opcode, instruction.operand))
+        print(string.format("  %04d: 0x%02X %d", i, instruction.opcode, instruction.value))
     end
 end
 
